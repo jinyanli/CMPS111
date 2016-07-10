@@ -1,0 +1,53 @@
+Assignment 1 Design Document
+Jinyan Li
+CruzID: jli134
+CMPS 111, Spring 2016
+
+1 Goal
+The goal of this program is to print the content of the file provided in standard input (stdin). The
+program should print the content of the file standard output.
+
+2 Assumptions
+we can only use the open(), close(), read(), perror() and write() system calls
+
+3 Design
+The general approach:
+   	case1: when there are files, repeatedly read a file from the arguement list, and print the content of the file by calling
+   	a function. In the function, first we need to open the file, then read the content of the file and put the data in the buffer, and
+	then write the data of the buffer to stdout, if the file doesn't exist, print error message.
+
+        case2: If no files are specified on the command line, mycat will copy standard input to standard output until
+        eof is sent as the first character of a line. If eof is sent as the last character of the line, the program print the current line and 
+        read the next character, if the next character is eof end the program else keep looping.
+
+4 Pseudocode
+main
+ if size of argv > 1
+   loop from 1 to size of argv
+      printfile(argv[i])
+ else
+    Declare buffer of size 1
+    while(true)
+       eof=READ(stdin, buffer,  size 1)
+       if(eof==true and buffer[0]==newline)
+          break
+       if(buffer[0]!=newline and eof==true)
+          if(READ(stdin, buffer,  size 1)!=eof)
+             WRITE(stdout, buffer, 1)
+             continue
+           else
+             break
+       WRITE(stdout, buffer, 1)
+    end while
+end main
+
+procedure printfile(file)
+      file descriptor<-open(file, O_RDONLY, 0)
+      if (file descriptor return true)
+          Declare buffer of size 1
+          while(READ(file descriptor, buffer,  1)!=EOF)
+               WRITE(stdout, buffer, 1)
+          close(file descriptor)
+       else
+         output("file doesn't exist") to stderror
+end procedure

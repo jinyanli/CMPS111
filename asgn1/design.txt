@@ -1,0 +1,206 @@
+Assignment 1 Design Document
+Jinyan Li
+CruzID: jli134
+CMPS111, Spring 2016
+
+1 Goal
+Implement a simple FreeBSD shell program that has following features:
+1. The internal shell command exit.
+
+2. A command with no arguments. 
+Example: ls 
+
+3. A command with one or more arguments. 
+Example: ls -l foo
+
+4. A command, with or without arguments whose input is redirected from a file. 
+Example: sort -nr < scores
+
+5. A command, with or without arguments, whose output is redirected to a file. 
+Example: ls -l > file and ls -l >> file
+
+6. A command, with or without arguments, whose output is piped to the input of another command.
+Example: ls -l | less
+
+7. Redirection of standard error. 
+Example: ls -l >& foo , ls -l >>& foo and  ls -l |& wc
+
+8. Two or more command sequences, possibly involving I/O redirection, separated by a semicolon.
+Example: cd /home/elm/cmps111 ; sort -nr < grades ; ls -l > foo
+
+9. The internal shell command cd. Example: cd /usr Example: cd
+
+10. Multiple pipes. 
+Example: cat mypaper.tr | pic | tbl | eqn | groff -mm -Tps | ps2pdf - > mypaper.pdf
+2. Assumptions
+1) The shell can be implemented by the following system calls:    
+	 exit(), fork(), execvp(), wait(), open(), close(), dup(), pipe(), chdir(), getcwd()
+2) String is either a word containing letters, numbers, period (.), dash (-), underscore (_) and forward slash (/).
+3) The input commands have been parsed and put into an array by the function get_args().
+4) A character string containing only the special characters: ( ) < > | & ; , and some of the sequences below use
+	two or more special characters in a row.
+
+3 Design
+In the main function, we need an infinite loop that keep taking input from user. The loop breaks when user type “exit”,
+else the loop calls a function “exe()” to execute the commands from users.
+
+In the “exe()” function, to execute a user’s command, it calls fork() to create a child process, then the parent process 
+calls wait() to wait for the child process to calls execvp() to execute the command and terminate itself. For “cd” command
+we don’t fork(), we only need to call chdir() to execute the command
+
+“exe()” first checks if the command contains any special characters, then we have following cases:
+
+1. If there is no special character, call execvp() to execute the command.
+
+2. If the special character is “<”, call open() to open the file with read only and create a file descriptor “fd”, then
+    call close(0) and dup(fd) to redirect the file’s “fd” to stdin and call execvp() to execute the command so the program
+	call will take the content of the file as input.
+
+3. If the special character is “>>”, call open() to open the file, if the file doesn’t exist, create the file. 
+    Then call close(1) and dup(fd) to redirect the file’s “fd” to stdout and call execvp() to execute the command so that the
+	output of the command will go to the file. 
+
+4. If the special character is “>”, we do everything same as case 3 except if the file exist already, the call fails.
+
+5. If the command is split by one or more “|”, process this command by calling “exe” recursively. In each call,
+	we cut the last command out of the whole command, execute the previous command by recursively calling “exe”,
+	and then execute the last command after the recursive is finished.  
+
+	There are 3 cases when we execute command with “|”. Eample: ps | sort | less
+
+	Case1: To execute the last command out of all command, here is the command “less”.
+	We first create a size 2 int array called “fd”, then call pipe() on “fd” to create the read end and write end.
+	Then call dup2(fd[0],0))  to redirect the read end to stdin, and then call “exe()”, with previous commands and “fd” 
+	as arguments recursively to execute previous commands. After the previous commands is finished. Call close(fd[1]) to 
+	close the write end then call execvp() to execute the command “less”.
+
+	Case2:  To execute the command between two “|”s, here is the command “sort”.
+	We first create a size 2 int array called “newfd”, then call pipe() on “newfd” to create the read end and write end.
+	Then call dup2(newfd[0],0))  to redirect the read end to stdin and dup2(fd[1],1) to redirect the write end to stdout, 
+	which will connect the data flow between the parent and child process, and then call “exe()” with previous commands and
+	“newfd” as arguments recursively to execute previous commands. After the previous commands is finished executing. 
+	Call close(newfd[1]) to close the write end of the pipe connecting to its child and close(fd[0]) to close the read end of the
+	pipe connecting to its parent. Then call execvp() to execute the command “sort”.
+
+	Case3: To execute the first command, here is “ps”.
+	We first need to call dup2(fd[1],1) to redirect the write end of the pipe to stdout, then close the read end of the pipe,
+	and then call execvp() to execute the command “ps”.
+
+6. When redirection operator includes an & character at the end, we call close(2) and dup(fd) to redirect the file descriptor to stderr.
+
+7. If the command contains one or more“;” execute the first command before “;”, then call exe() 
+    recursively with rest of the command as argument. The recursion stops when there is no “;” in the command.
+
+8. If the command is “cd”, we don’t call fork(), we only need to call chdir() to execute the command with arguments. 
+    We can call getcwd() to get the path of current working directory. 
+
+9. If the command contain “exit” call exit() to exit the program.
+
+
+4 Pseudocode
+main{
+		while(true){
+			char ** args=get_input()
+				if args[0]==”exit”{
+				exit()
+			}else{
+			   exe(arg, 0)
+			}
+		}
+}
+
+exe(char ** args, int is_pipe){
+    next_command=get_all_commands_before_first_"semicolon"(args)
+    args=get_first_command_before_"semicolon"(args)
+	special_character=get_special_char(args)
+	filename=get_file(args)
+
+	if(length of args >0){
+				if(args[0]!="exit")
+				   exit(0)
+				   
+				if(arg[0]=="cd"){
+				  currentpath=getcwd();
+				  if("cd" is followed by path){
+						chdir(currentpath);
+					}else{
+						chdir(args[1]);
+					}
+					if(next_command is not empty)
+					   exe(next_command, 0)
+				}else{
+
+						if(fork()!=0){
+									 wait()
+									 if(next_command is not empty)
+									 exe(next_command, 0)
+								 }else{
+										   if(special_character  is equal to “>>” ,“>”,“<”, “>>&” or”>&” ){
+												  if special_character=“<”{
+													 fd=open(filename)
+													 close(0)
+													 dup(fd)
+													  if(special_character follow by “&”){
+															close(2)
+															dup(fd)
+														}
+												  }else if special_character=“>”{
+														fd=open(filename, O_CREAT | O_EXCL |O_WRONLY)
+														close(1)
+														dup(fd)
+														if(special_character follow by “&”){
+															close(2)
+															dup(fd)
+														}
+												 }else if special_character=“>>”{
+														fd=open(filename, O_CREAT | O_APPEND |O_WRONLY)
+														close(1)
+														dup(fd)
+														if(special_character follow by “&”){
+																close(2)
+																dup(fd)
+														}
+												}
+												execvp(args[0], args)
+											}else if ((args contain “|” or “|&”) or is_pipe==1 ){
+													last_command=get_last_command(args)
+													previous_commands=get_previous_command(args) // get all the command before the command
+												   if(is_pipe==0){
+														int  fd[2];
+														pipe(fd);
+														dup2(fd[0],0);			
+														exe(previous_commands, fd);
+														close(fd[1]);		
+														execvp(last_command[0], last_command);
+													}else if(is_pipe!=0 & (args contain “|”)){
+														int  newfd[2];	
+														pipe(newfd);				
+														dup2(newfd[0],0);													
+														dup2(fd[1],1);
+														exe(previous_commands, newfd);
+														close(newfd[1]);
+														close(fd[0]);execvp(ast_command);
+														execvp(last_command[0], last_command);
+													}else{
+														  dup2(fd[1],1)
+														  if(std_err_redirection==1){
+														   close(2);
+														   dup(fd[1]);
+														 }
+														close(fd[0]);
+														execvp(args[0], args);
+													}		
+												}else{
+														execvp(args[0], args);
+
+												}
+								}	
+					}
+		}
+}
+
+
+
+
+
+
